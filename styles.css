@@ -168,6 +168,12 @@ a { color: inherit; text-decoration: none; }
 .intro-card h3 { font-size: 0.96rem; margin-bottom: 4px; color: var(--ink); }
 .intro-card p { font-size: 0.82rem; color: #6b6152; margin: 0; line-height: 1.45; }
 
+.landing-cta-row {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
 .hero-content .landing-cta {
   width: auto;
   padding: 15px 30px;
@@ -177,12 +183,54 @@ a { color: inherit; text-decoration: none; }
   color: var(--ink);
 }
 .hero-content .landing-cta:hover { background: var(--mustard-deep); border-color: var(--mustard-deep); }
+.hero-content .landing-cta.ghost {
+  background: transparent;
+  border-color: rgba(250,247,239,0.6);
+  color: var(--paper);
+}
+.hero-content .landing-cta.ghost:hover { background: rgba(250,247,239,0.12); border-color: var(--paper); }
 
 @media (max-width: 680px) {
   .hero-video-section { min-height: 640px; border-radius: 14px; }
   .landing-title.light { font-size: 2.3rem; }
   .intro-cards { grid-template-columns: 1fr; margin: 24px 0 26px; }
+  .landing-cta-row { flex-direction: column; align-items: stretch; }
+  .landing-cta-row .btn { width: 100%; }
 }
+
+/* ---------- shop directory ---------- */
+.directory { max-width: 520px; margin: 10px auto 0; }
+.directory-title { font-size: 1.9rem; margin-bottom: 6px; }
+.directory-sub { color: #6b6152; font-size: 0.92rem; margin-bottom: 18px; }
+.shop-search-input {
+  width: 100%;
+  padding: 13px 16px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  font-size: 1rem;
+  font-family: 'Inter', sans-serif;
+  background: var(--card);
+  color: var(--ink);
+  margin-bottom: 20px;
+}
+.shop-search-input:focus { outline: none; border-color: var(--green); }
+.shop-directory-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--card);
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  transition: border-color 0.12s ease;
+}
+.shop-directory-row:hover { border-color: var(--green); }
+.sdr-icon { width: 30px; height: 30px; flex-shrink: 0; }
+.sdr-icon svg { width: 100%; height: 100%; }
+.sdr-info { flex: 1; min-width: 0; }
+.sdr-name { font-weight: 700; font-size: 0.96rem; }
 
 /* ---------- auth ---------- */
 .auth-card {
@@ -319,7 +367,7 @@ a { color: inherit; text-decoration: none; }
 }
 .qr-canvas {
   width: 200px;
-  height: 200px;
+  height: auto;
   border-radius: 8px;
   box-shadow: 0 1px 4px rgba(36,31,23,0.15);
 }
@@ -339,7 +387,10 @@ a { color: inherit; text-decoration: none; }
   border-radius: var(--radius);
   padding: 12px 14px;
   margin-bottom: 10px;
+  flex-wrap: wrap;
 }
+.item-row.out-of-stock-row { opacity: 0.7; }
+.thumb-wrap { position: relative; flex-shrink: 0; }
 .item-row img.thumb, .item-thumb-fallback {
   width: 56px; height: 56px;
   border-radius: var(--radius);
@@ -370,6 +421,45 @@ a { color: inherit; text-decoration: none; }
 .del-btn {
   background: none; border: none; cursor: pointer;
   color: #A13B29; font-size: 1.3rem; padding: 6px;
+}
+.stock-toggle-btn {
+  font-size: 0.76rem;
+  font-weight: 700;
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1.5px solid var(--ink);
+  background: var(--paper);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.stock-toggle-btn.is-out { border-color: var(--green); color: var(--green); background: #E9F3EB; }
+.stock-toggle-btn:disabled { opacity: 0.6; cursor: default; }
+
+/* red "out of stock" stamp, shown on both dashboard thumbnails and
+   customer-facing product cards */
+.stock-stamp {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%) rotate(-14deg);
+  border: 2.5px solid #C9302C;
+  color: #C9302C;
+  background: rgba(255,255,255,0.88);
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-align: center;
+  pointer-events: none;
+}
+.thumb-wrap .stock-stamp {
+  font-size: 0.42rem;
+  padding: 2px 4px;
+  border-width: 1.5px;
+  border-radius: 3px;
+  width: 46px;
+}
+.img-wrap .stock-stamp {
+  font-size: 0.68rem;
+  padding: 4px 10px;
+  border-radius: 5px;
 }
 
 .field input[type="file"] {
@@ -436,7 +526,9 @@ a { color: inherit; text-decoration: none; }
   display: flex;
   flex-direction: column;
 }
+.product-card.out-of-stock .img-wrap img { opacity: 0.55; filter: grayscale(35%); }
 .product-card .img-wrap {
+  position: relative;
   aspect-ratio: 1;
   background: var(--line);
   display: flex; align-items: center; justify-content: center;
