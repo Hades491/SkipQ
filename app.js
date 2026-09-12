@@ -75,6 +75,7 @@ const Router = {
     }
   },
   showLanding() { currentView = 'landing'; renderLanding(); this.renderNav(); },
+  showDirectory() { currentView = 'directory'; renderShopDirectory(); this.renderNav(); },
   showLogin() { currentView = 'login'; renderLogin(); this.renderNav(); },
   showSignup() { currentView = 'signup'; renderSignup(); this.renderNav(); },
   showDashboard() { currentView = 'dashboard'; renderDashboard(); this.renderNav(); },
@@ -119,7 +120,10 @@ function renderLanding() {
             </div>
           </div>
 
-          <button class="btn landing-cta" id="enter-app-btn">Take me there →</button>
+          <div class="landing-cta-row">
+            <button class="btn landing-cta" id="enter-app-btn">Take me there →</button>
+            <button class="btn landing-cta ghost" id="browse-shops-btn">Browse shops near you</button>
+          </div>
         </div>
       </section>
     </div>
@@ -128,6 +132,67 @@ function renderLanding() {
     if (Session.isLoggedIn()) Router.showDashboard();
     else Router.showLogin();
   };
+  document.getElementById('browse-shops-btn').onclick = () => Router.showDirectory();
+}
+
+/* ---------------- shop directory (customer-facing browse + search) ---------------- */
+let allShopsCache = null;
+
+async function renderShopDirectory() {
+  app.innerHTML = `
+    <div class="directory">
+      <h1 class="directory-title">Shops on SkipQ</h1>
+      <p class="directory-sub">Browse every shop connected to SkipQ, or search by name.</p>
+      <input type="text" id="shop-search" class="shop-search-input" placeholder="Search shops by name…" autocomplete="off" />
+      <div id="shop-directory-list"><p style="color:#6b6152;">Loading shops…</p></div>
+      <p class="switch-line"><a href="#" id="back-to-landing">&larr; Back</a></p>
+    </div>
+  `;
+  document.getElementById('back-to-landing').onclick = (e) => { e.preventDefault(); Router.showLanding(); };
+
+  const listEl = document.getElementById('shop-directory-list');
+  try {
+    const res = await API.call('listShops', {});
+    if (!res.ok) {
+      listEl.innerHTML = `<div class="error-msg">${escapeHtml(res.error)}</div>`;
+      return;
+    }
+    allShopsCache = res.shops;
+    renderShopDirectoryList(allShopsCache);
+  } catch (err) {
+    listEl.innerHTML = `<div class="empty-state"><div class="glyph">✕</div>Couldn't load shops — check your connection and try again.</div>`;
+    return;
+  }
+
+  document.getElementById('shop-search').addEventListener('input', (e) => {
+    const q = e.target.value.trim().toLowerCase();
+    const filtered = !q ? allShopsCache : allShopsCache.filter(s => s.shop_name.toLowerCase().startsWith(q));
+    renderShopDirectoryList(filtered);
+  });
+}
+
+function renderShopDirectoryList(shops) {
+  const listEl = document.getElementById('shop-directory-list');
+  if (!shops || shops.length === 0) {
+    listEl.innerHTML = `<div class="empty-state"><div class="glyph">◇</div>No shops match that search.</div>`;
+    return;
+  }
+  listEl.innerHTML = shops.map(s => `
+    <div class="shop-directory-row" data-id="${s.shop_id}">
+      <div class="sdr-icon">${basketIconSvg()}</div>
+      <div class="sdr-info">
+        <div class="sdr-name">${escapeHtml(s.shop_name)}</div>
+      </div>
+      <span class="status-badge ${s.is_open ? 'status-ready' : 'status-done'}">${s.is_open ? 'Open' : 'Closed'}</span>
+    </div>
+  `).join('');
+  listEl.querySelectorAll('.shop-directory-row').forEach(row => {
+    row.onclick = () => {
+      // Navigate to the exact same URL that shop's printed QR code encodes,
+      // so the experience is identical either way.
+      window.location.href = `${location.origin}${location.pathname}?shop=${row.dataset.id}`;
+    };
+  });
 }
 
 function scanIconSvg() {
@@ -323,7 +388,11 @@ function roundRectPath(ctx, x, y, w, h, r) {
 // Generates a QR code locally (high error-correction) and stamps the SkipQ
 // basket logo in the center on a white pad, so downloaded/shared QR images
 // always carry the brand mark and stay reliably scannable.
-async function generateQrWithLogo(text, size = 280) {
+// Generates a QR code with the SkipQ logo baked in, plus a branded text
+// band underneath naming the shop — so the downloaded/shared image reads as
+// "[Shop]'s online ordering," not just a bare unlabeled QR code.
+async function generateQrWithLogo(text, size = 280, shopName = '') {
+  const bandHeight = shopName ? Math.round(size * 0.32) : 0;
   const holder = document.createElement('div');
   holder.style.position = 'fixed';
   holder.style.left = '-9999px';
@@ -339,10 +408,10 @@ async function generateQrWithLogo(text, size = 280) {
 
   const composite = document.createElement('canvas');
   composite.width = size;
-  composite.height = size;
+  composite.height = size + bandHeight;
   const ctx = composite.getContext('2d');
   ctx.fillStyle = '#FFFFFF';
-  ctx.fillRect(0, 0, size, size);
+  ctx.fillRect(0, 0, composite.width, composite.height);
   ctx.drawImage(qrCanvas, 0, 0, size, size);
 
   try {
@@ -365,13 +434,34 @@ async function generateQrWithLogo(text, size = 280) {
     // Logo failed to load (e.g. offline) — the plain QR still works fine without it.
   }
 
+  if (shopName) {
+    if (document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch (e) {} }
+    const bandY = size;
+    ctx.fillStyle = '#1B4332';
+    ctx.fillRect(0, bandY, size, bandHeight);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#FAF7EF';
+    ctx.font = `700 ${Math.round(size * 0.072)}px Fraunces, Georgia, serif`;
+    ctx.fillText(truncateForCanvas(ctx, shopName, size * 0.9), size / 2, bandY + bandHeight * 0.42);
+    ctx.fillStyle = '#E3A93C';
+    ctx.font = `600 ${Math.round(size * 0.05)}px Inter, sans-serif`;
+    ctx.fillText('Scan for online ordering', size / 2, bandY + bandHeight * 0.72);
+  }
+
   document.body.removeChild(holder);
   return composite;
 }
 
+function truncateForCanvas(ctx, text, maxWidth) {
+  if (ctx.measureText(text).width <= maxWidth) return text;
+  let t = text;
+  while (t.length > 1 && ctx.measureText(t + '…').width > maxWidth) t = t.slice(0, -1);
+  return t + '…';
+}
+
 async function mountShopQr(storeUrl) {
   const holder = document.getElementById('qr-canvas-holder');
-  const canvas = await generateQrWithLogo(storeUrl, 280);
+  const canvas = await generateQrWithLogo(storeUrl, 280, Session.shopName);
   canvas.className = 'qr-canvas';
   holder.innerHTML = '';
   holder.appendChild(canvas);
@@ -431,7 +521,6 @@ function renderAddForm() {
             </select>
           </div>
         </div>
-        <div class="field"><label>Quantity available</label><input name="quantity" type="number" step="1" min="0" required/></div>
         <button class="btn" type="submit">Add to store</button>
       </form>
     </div>
@@ -483,7 +572,6 @@ function renderAddForm() {
         image_url,
         price: fd.get('price'),
         unit_type: fd.get('unit_type'),
-        quantity: fd.get('quantity'),
       });
       if (res.ok) {
         wrap.innerHTML = '';
@@ -537,14 +625,20 @@ async function loadOwnerItems(shopId) {
     return;
   }
   list.innerHTML = res.items.map(item => `
-    <div class="item-row">
-      ${item.image_url
-        ? `<img class="thumb" src="${escapeAttr(item.image_url)}" alt="" onerror="this.style.display='none'"/>`
-        : `<div class="item-thumb-fallback">◇</div>`}
+    <div class="item-row ${item.in_stock ? '' : 'out-of-stock-row'}">
+      <div class="thumb-wrap">
+        ${item.image_url
+          ? `<img class="thumb" src="${escapeAttr(item.image_url)}" alt="" onerror="this.style.display='none'"/>`
+          : `<div class="item-thumb-fallback">◇</div>`}
+        ${item.in_stock ? '' : '<div class="stock-stamp">OUT OF STOCK</div>'}
+      </div>
       <div class="item-info">
         <div class="name">${escapeHtml(item.name)}${item.is_new ? '<span class="new-badge">New</span>' : ''}</div>
-        <div class="meta">₹${Number(item.price).toFixed(2)} ${unitLabel(item.unit_type)} · ${item.quantity} available</div>
+        <div class="meta">₹${Number(item.price).toFixed(2)} ${unitLabel(item.unit_type)}</div>
       </div>
+      <button class="stock-toggle-btn ${item.in_stock ? '' : 'is-out'}" data-id="${item.item_id}" data-next="${item.in_stock ? 'false' : 'true'}">
+        ${item.in_stock ? 'Mark out of stock' : 'Mark in stock'}
+      </button>
       <button class="del-btn" data-id="${item.item_id}" title="Delete item">✕</button>
     </div>
   `).join('');
@@ -552,6 +646,13 @@ async function loadOwnerItems(shopId) {
     btn.onclick = async () => {
       if (!confirm('Delete this item?')) return;
       await API.call('deleteItem', { shop_id: shopId, item_id: btn.dataset.id });
+      loadOwnerItems(shopId);
+    };
+  });
+  list.querySelectorAll('.stock-toggle-btn').forEach(btn => {
+    btn.onclick = async () => {
+      btn.disabled = true;
+      await API.call('setItemStock', { shop_id: shopId, item_id: btn.dataset.id, in_stock: btn.dataset.next === 'true' });
       loadOwnerItems(shopId);
     };
   });
@@ -707,31 +808,36 @@ function renderGrid() {
     return;
   }
   grid.className = 'grid';
-  grid.innerHTML = storeItems.map(item => `
-    <div class="product-card">
+  grid.innerHTML = storeItems.map(item => {
+    const outOfStock = !item.in_stock;
+    return `
+    <div class="product-card ${outOfStock ? 'out-of-stock' : ''}">
       <div class="img-wrap">
         ${item.image_url
           ? `<img src="${escapeAttr(item.image_url)}" alt="${escapeAttr(item.name)}" onerror="this.parentElement.innerHTML='<div class=ph-fallback>◇</div>'"/>`
           : `<div class="ph-fallback">◇</div>`}
+        ${outOfStock ? '<div class="stock-stamp">OUT OF STOCK</div>' : ''}
       </div>
       <div class="pc-body">
         <div class="pc-name">${escapeHtml(item.name)}${item.is_new ? '<span class="new-badge">New</span>' : ''}</div>
         <div class="pc-price">₹${Number(item.price).toFixed(2)} ${unitLabel(item.unit_type)}</div>
-        <div class="pc-qty">${item.quantity} available</div>
-        ${storeIsOpen ? `
+        ${!storeIsOpen ? `<div class="qty-stepper disabled">Not accepting orders</div>`
+          : outOfStock ? `<div class="qty-stepper disabled">Out of stock</div>`
+          : `
           <div class="qty-stepper" data-id="${item.item_id}">
             <button data-action="minus">−</button>
             <span class="count">0</span>
             <button data-action="plus">+</button>
           </div>
-        ` : `<div class="qty-stepper disabled">Not accepting orders</div>`}
+        `}
       </div>
     </div>
-  `).join('');
+  `;
+  }).join('');
 
   if (!storeIsOpen) return; // no ordering controls to wire up while closed
 
-  grid.querySelectorAll('.qty-stepper').forEach(stepper => {
+  grid.querySelectorAll('.qty-stepper:not(.disabled)').forEach(stepper => {
     const itemId = stepper.dataset.id;
     const item = storeItems.find(i => i.item_id === itemId);
     const countEl = stepper.querySelector('.count');
@@ -741,7 +847,7 @@ function renderGrid() {
         const current = cart[itemId]?.qty || 0;
         const next = Math.max(0, current + delta);
         if (next === 0) delete cart[itemId];
-        else cart[itemId] = { name: item.name, price: item.price, unit_type: item.unit_type, qty: next };
+        else cart[itemId] = { name: item.name, price: item.price, unit_type: item.unit_type, qty: next, item_id: itemId };
         countEl.textContent = next;
         renderCartBar();
       };
@@ -764,8 +870,8 @@ function renderCartBar() {
     document.body.appendChild(bar);
   }
   bar.innerHTML = `
-    <span class="cart-count">${totalItems} item${totalItems > 1 ? 's' : ''} in cart</span>
     <button id="review-order">Review order</button>
+    <span class="cart-count">${totalItems} item${totalItems > 1 ? 's' : ''} in cart</span>
   `;
   document.getElementById('review-order').onclick = openCartModal;
 }
@@ -798,7 +904,7 @@ function openCartModal() {
     placeBtn.disabled = true;
     placeBtn.textContent = 'Placing order…';
 
-    const itemsPayload = Object.values(cart).map(c => ({ name: c.name, qty: c.qty }));
+    const itemsPayload = Object.values(cart).map(c => ({ name: c.name, qty: c.qty, item_id: c.item_id }));
     try {
       const res = await API.call('placeOrder', {
         shop_id: storeShopId,
